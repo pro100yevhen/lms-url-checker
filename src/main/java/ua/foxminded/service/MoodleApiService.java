@@ -7,13 +7,19 @@ import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import ua.foxminded.model.LinkValidationResult;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
 @Service
 public class MoodleApiService {
@@ -26,13 +32,6 @@ public class MoodleApiService {
     private static final String WSTOKEN = "wstoken";
     private static final String WSFUNCTION = "wsfunction";
     private static final String MOODLE_WS_REST_FORMAT = "moodlewsrestformat";
-    private static final String ID = "id";
-    private static final String INTRO = "intro";
-    private static final String COURSES = "courses";
-    private static final String ASSIGNMENTS = "assignments";
-    private static final String FUNCTION_ASSIGNMENTS = "mod_assign_get_assignments";
-    private static final String COURSE_ID_KEY = "courseids[0]";
-    private static final String REGEX_HREF = "href=\\\"(.*?)\\\"";
 
     public MoodleApiService(final WebClient.Builder webClientBuilder,
                             @Value("${moodle.base-url}") final String baseUrl,
@@ -42,7 +41,10 @@ public class MoodleApiService {
         this.webClient = webClientBuilder.baseUrl(baseUrl).build();
     }
 
-    public Flux<Integer> getCourseIds(final String function) {
+    public Flux<Integer> getCourseIds() {
+        final String function = "core_course_get_courses";
+        final String ID = "id";
+
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam(WSTOKEN, moodleToken)
@@ -55,15 +57,15 @@ public class MoodleApiService {
                 .map(map -> (Integer) map.get(ID));
     }
 
-    public Flux<List<String>> extractAssignmentLinks(Flux<Integer> courseIds) {
-        final int maxConcurrentRequests = 10;
+    public Flux<LinkValidationResult> extractAssignmentLinks(final Flux<Integer> courseIds) {
         return courseIds
-                .flatMap(this::fetchAssignmentsForCourse, maxConcurrentRequests)
-                .flatMap(taskData -> Flux.fromIterable(extractLinks(taskData)), maxConcurrentRequests)
-                .buffer(10);
+                .flatMap(this::fetchAssignmentsForCourse);
     }
 
-    public Flux<String> fetchAssignmentsForCourse(Integer courseId) {
+    public Flux<LinkValidationResult> fetchAssignmentsForCourse(final Integer courseId) {
+        final String FUNCTION_ASSIGNMENTS = "mod_assign_get_assignments";
+        final String COURSE_ID_KEY = "courseids[0]";
+
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam(WSTOKEN, moodleToken)
@@ -75,7 +77,7 @@ public class MoodleApiService {
                 .retrieve()
                 .bodyToFlux(DataBuffer.class)
                 .map(dataBuffer -> {
-                    byte[] bytes = new byte[dataBuffer.readableByteCount()];
+                    final byte[] bytes = new byte[dataBuffer.readableByteCount()];
                     dataBuffer.read(bytes);
                     DataBufferUtils.release(dataBuffer);
                     return new String(bytes, StandardCharsets.UTF_8);
@@ -85,39 +87,51 @@ public class MoodleApiService {
                 .flatMapMany(this::processResponse);
     }
 
-    private Flux<String> processResponse(String response) {
+    private Flux<LinkValidationResult> processResponse(final String response) {
+        final Set<String> processedLinks = ConcurrentHashMap.newKeySet();
+
+        final String introBlock = "intro";
+        final String coursesBlock = "courses";
+        final String assignmentsBlock = "assignments";
         try {
-            ObjectMapper objectMapper = new ObjectMapper();
-            Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
+            final ObjectMapper objectMapper = new ObjectMapper();
+            final Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
+            final List<Map<String, Object>> courses = (List<Map<String, Object>>) responseMap.get(coursesBlock);
 
-            final List<Map<String, Object>> courses = (List<Map<String, Object>>) responseMap.get(COURSES);
+            return Flux.fromIterable(courses)
+                    .flatMap(course -> {
+                        final String courseName = (String) course.get("shortname");
+                        final List<Map<String, Object>> assignments = (List<Map<String, Object>>) course.get(assignmentsBlock);
 
-            if (courses == null || courses.isEmpty()) {
-                return Flux.empty();
-            }
+                        return Flux.fromIterable(assignments)
+                                .flatMap(assignment -> {
+                                    final String name = "name";
+                                    final String taskName = (String) assignment.get(name);
+                                    final String intro = (String) assignment.get(introBlock);
+                                    final List<String> links = extractLinks(intro);
 
-            final Map<String, Object> firstCourse = courses.get(0);
-            final List<Map<String, Object>> assignments = (List<Map<String, Object>>) firstCourse.get(ASSIGNMENTS);
+                                    return Flux.fromIterable(links)
+                                            .filter(link -> processedLinks.add(link)) // Add to the set and filter only new links
+                                            .map(link -> new LinkValidationResult(link, false, courseName, taskName));
+                                });
+                    });
 
-            if (assignments == null || assignments.isEmpty()) {
-                return Flux.empty();
-            }
-
-            return Flux.fromIterable(assignments)
-                    .map(assignment -> (String) assignment.get(INTRO));
-
-        } catch (Exception e) {
+        } catch (final Exception e) {
             return Flux.error(e);
         }
     }
 
-    private List<String> extractLinks(String intro) {
+    private List<String> extractLinks(final String intro) {
         final List<String> links = new ArrayList<>();
-        final Pattern pattern = Pattern.compile(REGEX_HREF);
-        final Matcher matcher = pattern.matcher(intro);
+        final Document doc = Jsoup.parse(intro);
+        final Elements anchors = doc.select("a[href]");
 
-        while (matcher.find()) {
-            links.add(matcher.group(1));
+        for (final Element anchor : anchors) {
+            final String link = anchor.attr("href");
+
+            if (link.startsWith("http://") || link.startsWith("https://")) {
+                links.add(link);
+            }
         }
         return links;
     }
