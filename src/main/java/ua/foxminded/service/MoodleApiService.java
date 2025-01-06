@@ -26,6 +26,13 @@ public class MoodleApiService {
     private static final String WSTOKEN = "wstoken";
     private static final String WSFUNCTION = "wsfunction";
     private static final String MOODLE_WS_REST_FORMAT = "moodlewsrestformat";
+    private static final String ID = "id";
+    private static final String INTRO = "intro";
+    private static final String COURSES = "courses";
+    private static final String ASSIGNMENTS = "assignments";
+    private static final String FUNCTION_ASSIGNMENTS = "mod_assign_get_assignments";
+    private static final String COURSE_ID_KEY = "courseids[0]";
+    private static final String REGEX_HREF = "href=\\\"(.*?)\\\"";
 
     public MoodleApiService(final WebClient.Builder webClientBuilder,
                             @Value("${moodle.base-url}") final String baseUrl,
@@ -36,7 +43,6 @@ public class MoodleApiService {
     }
 
     public Flux<Integer> getCourseIds(final String function) {
-        final String id = "id";
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam(WSTOKEN, moodleToken)
@@ -46,31 +52,29 @@ public class MoodleApiService {
                 .header("Accept", "application/json")
                 .retrieve()
                 .bodyToFlux(Map.class)
-                .map(map -> (Integer) map.get(id));
+                .map(map -> (Integer) map.get(ID));
     }
 
     public Flux<List<String>> extractAssignmentLinks(Flux<Integer> courseIds) {
         final int maxConcurrentRequests = 10;
         return courseIds
-                .flatMap(courseId -> fetchAssignmentsForCourse(courseId), maxConcurrentRequests)
-                .map(this::extractLinks);
+                .flatMap(this::fetchAssignmentsForCourse, maxConcurrentRequests)
+                .flatMap(taskData -> Flux.fromIterable(extractLinks(taskData)), maxConcurrentRequests)
+                .buffer(10);
     }
 
     public Flux<String> fetchAssignmentsForCourse(Integer courseId) {
-        final String function = "mod_assign_get_assignments";
-        final String courseIdKey = "courseids[0]";
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam(WSTOKEN, moodleToken)
-                        .queryParam(WSFUNCTION, function)
+                        .queryParam(WSFUNCTION, FUNCTION_ASSIGNMENTS)
                         .queryParam(MOODLE_WS_REST_FORMAT, FORMAT)
-                        .queryParam(courseIdKey, courseId)
+                        .queryParam(COURSE_ID_KEY, courseId)
                         .build())
                 .header("Accept", "application/json")
                 .retrieve()
                 .bodyToFlux(DataBuffer.class)
                 .map(dataBuffer -> {
-                    // Process each DataBuffer chunk
                     byte[] bytes = new byte[dataBuffer.readableByteCount()];
                     dataBuffer.read(bytes);
                     DataBufferUtils.release(dataBuffer);
@@ -78,34 +82,29 @@ public class MoodleApiService {
                 })
                 .collectList()
                 .map(chunks -> String.join("", chunks))
-                .flatMapMany(response -> processResponse(response));
+                .flatMapMany(this::processResponse);
     }
 
     private Flux<String> processResponse(String response) {
-        final String intro = "intro";
-
         try {
             ObjectMapper objectMapper = new ObjectMapper();
             Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
 
-            final List<Map<String, Object>> courses = (List<Map<String, Object>>) responseMap.get("courses");
+            final List<Map<String, Object>> courses = (List<Map<String, Object>>) responseMap.get(COURSES);
 
             if (courses == null || courses.isEmpty()) {
-                final String emptyResponse = "No courses found in response";
-                return Flux.just(emptyResponse);
+                return Flux.empty();
             }
 
-            final int courseIndex = 0;
-            final Map<String, Object> firstCourse = courses.get(courseIndex);
-            final List<Map<String, Object>> assignments = (List<Map<String, Object>>) firstCourse.get("assignments");
+            final Map<String, Object> firstCourse = courses.get(0);
+            final List<Map<String, Object>> assignments = (List<Map<String, Object>>) firstCourse.get(ASSIGNMENTS);
 
             if (assignments == null || assignments.isEmpty()) {
-                final String emptyResponse = "No assignments found for course";
-                return Flux.just(emptyResponse);
+                return Flux.empty();
             }
 
             return Flux.fromIterable(assignments)
-                    .map(assignment -> (String) assignment.get(intro));
+                    .map(assignment -> (String) assignment.get(INTRO));
 
         } catch (Exception e) {
             return Flux.error(e);
@@ -113,10 +112,8 @@ public class MoodleApiService {
     }
 
     private List<String> extractLinks(String intro) {
-        final String regex = "href=\\\"(.*?)\\\"";
         final List<String> links = new ArrayList<>();
-
-        final Pattern pattern = Pattern.compile(regex);
+        final Pattern pattern = Pattern.compile(REGEX_HREF);
         final Matcher matcher = pattern.matcher(intro);
 
         while (matcher.find()) {
