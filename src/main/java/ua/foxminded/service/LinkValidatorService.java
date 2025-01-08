@@ -11,6 +11,7 @@ import reactor.netty.http.client.HttpClient;
 import reactor.core.scheduler.Schedulers;
 import ua.foxminded.model.LinkValidationResult;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 
@@ -45,7 +46,7 @@ public class LinkValidatorService {
     }
 
     private Mono<LinkValidationResult> checkLink(final String link, final String courseName,
-                                                 final String taskName, int redirectionDepth) {
+                                                 final String taskName, final int redirectionDepth) {
         if (redirectionDepth > 3) {
             return Mono.just(new LinkValidationResult(link, false, courseName, taskName, "Too many redirects"));
         }
@@ -55,8 +56,11 @@ public class LinkValidatorService {
             return Mono.just(new LinkValidationResult(link, false, courseName, taskName, "Invalid scheme"));
         }
 
-        return webClient.head()
+        return webClient.get()
                 .uri(link)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
                 .retrieve()
                 .toBodilessEntity()
                 .flatMap(response -> {
@@ -78,10 +82,10 @@ public class LinkValidatorService {
                         e -> Mono.just(new LinkValidationResult(link, false, courseName, taskName, e.getMessage())));
     }
 
-    private String resolveRelativeUrl(String baseUrl, String relativeUrl) {
+    private String resolveRelativeUrl(final String baseUrl, final String relativeUrl) {
         try {
-            return new java.net.URI(baseUrl).resolve(relativeUrl).toString();
-        } catch (Exception e) {
+            return new URI(baseUrl).resolve(relativeUrl).toString();
+        } catch (final Exception e) {
             log.error("Error resolving relative URL: base={}, relative={}", baseUrl, relativeUrl, e);
             return relativeUrl;
         }
