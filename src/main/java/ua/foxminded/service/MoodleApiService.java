@@ -101,7 +101,8 @@ public class MoodleApiService {
             return Flux.fromIterable(courses)
                     .flatMap(course -> {
                         final String courseName = (String) course.get("shortname");
-                        final List<Map<String, Object>> assignments = (List<Map<String, Object>>) course.get(assignmentsBlock);
+                        final List<Map<String, Object>> assignments = (List<Map<String, Object>>) course.get(
+                                assignmentsBlock);
 
                         return Flux.fromIterable(assignments)
                                 .flatMap(assignment -> {
@@ -109,10 +110,10 @@ public class MoodleApiService {
                                     final String taskName = (String) assignment.get(name);
                                     final String intro = (String) assignment.get(introBlock);
                                     final List<String> links = extractLinks(intro);
-
+                                    final String emptyStatusMessage = "";
                                     return Flux.fromIterable(links)
-                                            .filter(link -> processedLinks.add(link)) // Add to the set and filter only new links
-                                            .map(link -> new LinkValidationResult(link, false, courseName, taskName));
+                                            .filter(link -> processedLinks.add(link))
+                                            .map(link -> new LinkValidationResult(link, false, courseName, taskName, emptyStatusMessage));
                                 });
                     });
 

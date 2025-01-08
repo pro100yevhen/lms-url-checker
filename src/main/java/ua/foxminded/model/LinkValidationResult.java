@@ -5,13 +5,15 @@ public class LinkValidationResult {
     private final boolean valid;
     private final String courseName;
     private final String taskName;
+    private final String statusMessage;
 
     public LinkValidationResult(final String link, final boolean valid, final String courseName,
-                                final String taskName) {
+                                final String taskName, final String statusMessage) {
         this.link = link;
         this.valid = valid;
         this.courseName = courseName;
         this.taskName = taskName;
+        this.statusMessage = statusMessage;
     }
 
     public String getLink() {
@@ -28,5 +30,9 @@ public class LinkValidationResult {
 
     public String getTaskName() {
         return taskName;
+    }
+
+    public String getStatusMessage() {
+        return statusMessage;
     }
 }
