@@ -27,7 +27,8 @@ public class MoodlePageController {
     public Mono<String> showLinks(final Model model) {
         return moodleService.extractAssignmentLinks(moodleService.getCourseIds())
                 .collectList()
-                .flatMap(linkValidatorService::validateLinks)
+                .flatMapMany(linkValidatorService::validateLinks)
+                .collectList()
                 .map(results -> results.stream()
                         .filter(result -> !result.isValid())
                         .collect(Collectors.toList()))

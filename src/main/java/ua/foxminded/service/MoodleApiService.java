@@ -112,7 +112,7 @@ public class MoodleApiService {
                                     final List<String> links = extractLinks(intro);
                                     final String emptyStatusMessage = "";
                                     return Flux.fromIterable(links)
-                                            .filter(link -> processedLinks.add(link))
+                                            .filter(processedLinks::add)
                                             .map(link -> new LinkValidationResult(link, false, courseName, taskName, emptyStatusMessage));
                                 });
                     });
