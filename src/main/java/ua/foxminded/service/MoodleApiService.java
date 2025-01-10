@@ -63,15 +63,15 @@ public class MoodleApiService {
     }
 
     public Flux<LinkValidationResult> fetchAssignmentsForCourse(final Integer courseId) {
-        final String FUNCTION_ASSIGNMENTS = "mod_assign_get_assignments";
-        final String COURSE_ID_KEY = "courseids[0]";
+        final String functionAssignments = "mod_assign_get_assignments";
+        final String courseIdKey = "courseids[0]";
 
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam(WSTOKEN, moodleToken)
-                        .queryParam(WSFUNCTION, FUNCTION_ASSIGNMENTS)
+                        .queryParam(WSFUNCTION, functionAssignments)
                         .queryParam(MOODLE_WS_REST_FORMAT, FORMAT)
-                        .queryParam(COURSE_ID_KEY, courseId)
+                        .queryParam(courseIdKey, courseId)
                         .build())
                 .header("Accept", "application/json")
                 .retrieve()

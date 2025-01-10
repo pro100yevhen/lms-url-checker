@@ -10,7 +10,6 @@ import reactor.netty.http.client.HttpClient;
 import reactor.core.scheduler.Schedulers;
 import ua.foxminded.model.LinkValidationResult;
 
-import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -26,7 +25,7 @@ public class LinkValidatorService {
     private final WebClient webClient;
 
     public LinkValidatorService(final WebClient.Builder webClientBuilder) {
-        HttpClient httpClient = HttpClient.create()
+        final HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofSeconds(TIMEOUT_SECONDS))
                 .followRedirect(true);
 
@@ -73,7 +72,7 @@ public class LinkValidatorService {
                 new LinkValidationResult(link, isValid, courseName, taskName, response.getStatusCode().toString()));
     }
 
-    private String cleanErrorMessage(String message) {
+    private String cleanErrorMessage(final String message) {
         return IP_PATTERN.matcher(message).replaceAll("");
     }
 }
