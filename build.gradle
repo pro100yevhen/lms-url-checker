@@ -21,5 +21,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.jsoup:jsoup:1.16.1'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 
 }
