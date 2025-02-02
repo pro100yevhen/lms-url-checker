@@ -1,5 +1,7 @@
 package ua.foxminded.service;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
@@ -11,22 +13,26 @@ import reactor.core.scheduler.Schedulers;
 import ua.foxminded.model.LinkValidationResult;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Service
 public class LinkValidatorService {
 
-    private static final Pattern IP_PATTERN = Pattern.compile(":\\d{1,5}$");
     private static final int MAX_REDIRECTS = 5;
     private static final int TIMEOUT_SECONDS = 30;
-    private static final int MAX_CONCURRENT_REQUESTS = 10;
+    private final int timeoutSeconds;
 
     private final WebClient webClient;
 
-    public LinkValidatorService(final WebClient.Builder webClientBuilder) {
+    public LinkValidatorService(
+            final WebClient.Builder webClientBuilder,
+            @Value("${link.checker.timeout}") final int timeoutSeconds
+    ) {
+        this.timeoutSeconds = timeoutSeconds;
+
         final HttpClient httpClient = HttpClient.create()
-                .responseTimeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .responseTimeout(Duration.ofSeconds(timeoutSeconds))
                 .followRedirect(true);
 
         this.webClient = webClientBuilder
@@ -34,21 +40,27 @@ public class LinkValidatorService {
                 .build();
     }
 
-    public Flux<LinkValidationResult> validateLinks(final List<LinkValidationResult> links) {
-        return Flux.fromIterable(links)
-                .parallel(MAX_CONCURRENT_REQUESTS)
+    public Flux<LinkValidationResult> validateLinks(final Flux<LinkValidationResult> links) {
+        return links
+                .distinct(LinkValidationResult::link)
+                .parallel()
                 .runOn(Schedulers.parallel())
                 .flatMap(this::checkLink)
-                .sequential();
+                .sequential()
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .onErrorResume(e -> {
+                    log.error("Validation error: {}", e.getMessage());
+                    return Flux.empty();
+                });
     }
 
     private Mono<LinkValidationResult> checkLink(final LinkValidationResult linkValidationResult) {
-        return checkLink(linkValidationResult.getLink(), linkValidationResult.getCourseName(),
-                linkValidationResult.getTaskName(), 0)
+        return checkLink(linkValidationResult.link(), linkValidationResult.courseName(),
+                linkValidationResult.taskName(), 0)
                 .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
                 .onErrorResume(e -> Mono.just(new LinkValidationResult(
-                        linkValidationResult.getLink(), false, linkValidationResult.getCourseName(),
-                        linkValidationResult.getTaskName(), cleanErrorMessage(e.getMessage()))));
+                        linkValidationResult.link(), false, linkValidationResult.courseName(),
+                        linkValidationResult.taskName(), cleanErrorMessage(e.getMessage()))));
     }
 
     private Mono<LinkValidationResult> checkLink(final String link, final String courseName,
@@ -73,6 +85,8 @@ public class LinkValidatorService {
     }
 
     private String cleanErrorMessage(final String message) {
-        return IP_PATTERN.matcher(message).replaceAll("");
+        final Pattern IP_PATTERN = Pattern.compile(":\\d{1,5}$");
+        final String emptyStatusMessage = "";
+        return IP_PATTERN.matcher(message).replaceAll(emptyStatusMessage);
     }
 }
