@@ -1,20 +1,13 @@
-version: "3.8"
+version: '3.8'
+
 services:
-  lms-url-checker:
-    container_name: lms-url-checker
-    platform: linux/arm64
+  lms-checker:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "9080:8080"
+      - "8080:8080"
     environment:
-      - MOODLE_TOKEN=${MOODLE_TOKEN}
       - MOODLE_BASE_URL=${MOODLE_BASE_URL}
-    restart: always
-    networks:
-      - app-network
-
-networks:
-  app-network:
-    driver: bridge
+      - MOODLE_TOKEN=${MOODLE_TOKEN}
+      - LINK_CHECKER_TIMEOUT=30

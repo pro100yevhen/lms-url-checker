@@ -1,35 +1,21 @@
-# Build stage
-FROM amazoncorretto:21-alpine AS build
+# Build stage (use valid Gradle tag)
+FROM gradle:8.5-jdk21-jammy AS build
 WORKDIR /app
 
-# Install necessary build dependencies
-RUN apk add --no-cache bash
+# Cache Gradle dependencies
+COPY build.gradle settings.gradle ./
+RUN gradle dependencies --no-daemon
 
-# Copy gradle files first
-COPY gradlew .
-COPY gradle gradle
-COPY build.gradle .
-COPY settings.gradle .
-
-# Make gradlew executable
-RUN chmod +x ./gradlew
-
-# Configure Gradle
-ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"
-
-# Copy source code
-COPY src src
-
-# Build with specific options
-RUN ./gradlew build \
-    --no-daemon \
-    --console=plain \
-    --no-parallel \
-    --no-watch-fs \
-    -Dorg.gradle.native=false
+# Build application
+COPY src ./src
+RUN gradle build --no-daemon --parallel -x test
 
 # Runtime stage
-FROM amazoncorretto:21-alpine
+FROM eclipse-temurin:21-jdk-alpine
 WORKDIR /app
+
 COPY --from=build /app/build/libs/*.jar app.jar
+
+EXPOSE 8080
+
 ENTRYPOINT ["java", "-jar", "app.jar"]
