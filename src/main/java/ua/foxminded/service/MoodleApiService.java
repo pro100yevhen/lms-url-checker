@@ -1,6 +1,7 @@
 package ua.foxminded.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -21,6 +22,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
+@Slf4j
 @Service
 public class MoodleApiService {
 
@@ -118,7 +120,8 @@ public class MoodleApiService {
                     });
 
         } catch (final Exception e) {
-            return Flux.error(e);
+            log.error("Error processing Moodle response: {}", e.getMessage());
+            return Flux.error(new RuntimeException("Failed to process Moodle API response"));
         }
     }
 
@@ -126,11 +129,14 @@ public class MoodleApiService {
         final List<String> links = new ArrayList<>();
         final Document doc = Jsoup.parse(intro);
         final Elements anchors = doc.select("a[href]");
+        final String http = "http://";
+        final String https = "https://";
+        final String href = "href";
 
         for (final Element anchor : anchors) {
-            final String link = anchor.attr("href");
+            final String link = anchor.attr(href);
 
-            if (link.startsWith("http://") || link.startsWith("https://")) {
+            if (link.startsWith(http) || link.startsWith(https)) {
                 links.add(link);
             }
         }
