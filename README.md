@@ -10,87 +10,121 @@ A Spring Boot application designed to validate links within FoxmindEd LMS (Moodl
 - Displays results in a clean, responsive web interface
 - Shows detailed information including course name, task name, and error messages
 - Supports vertical scrolling for easy navigation through results
+- Docker support for easy deployment
 
 ## Prerequisites
 
-- Java 17 or higher
-- Gradle
+### Local Development
+- Java 21 or higher
+- Gradle 8.5+
 - Access to a Moodle LMS instance
 - Moodle web service token with appropriate permissions
 
-## Setup
+## Configuration
 
-1. **Moodle Configuration**
-    - Create a new user in Moodle with manager permissions
-    - Generate a web service token at: `https://your-moodle-instance/admin/webservice/tokens.php`
-    - Select "Moodle mobile web service" for permissions
-    - Note: Tokens expire after one month by default. Adjust "Valid until" or uncheck it as needed
-    - You need to assign the user to all courses witch you want to check
-   
+### Environment Variables
+Configure through either `.env` file or Docker environment variables:
 
-2. **Application Configuration**
-   Create `application.properties` or use environment variables:
-   ```properties
-   moodle.token=${MOODLE_TOKEN}
-   moodle.base-url=${MOODLE_BASE_URL}
+| Variable               | Description                                                                 | Default     |
+|------------------------|-----------------------------------------------------------------------------|-------------|
+| `MOODLE_BASE_URL`      | Moodle web service endpoint (e.g., `https://your-moodle/webservice/rest/server.php`) | *Required*  |
+| `MOODLE_TOKEN`         | Moodle web service token with manager permissions                           | *Required*  |
+| `LINK_CHECKER_TIMEOUT` | Timeout in seconds for link validation requests                             | 30          |
+
+### Port Configuration
+The application runs on port `8080` by default. To change the exposed port:
+
+1. **Docker Compose**:
+   ```yaml
+   services:
+     lms-checker:
+       ports:
+         - "YOUR_HOST_PORT:8080"  # e.g., "8090:8080"
    ```
-    - `MOODLE_TOKEN`: Your Moodle web service token
-    - `MOODLE_BASE_URL`: Your Moodle web service endpoint (e.g., `https://lms.foxminded.ua/webservice/rest/server.php`)
+2. **Local Execution**:
+   ```properties
+   server.port=YOUR_PORT
+   ```
 
-## Building and Running
+## Running the Application
 
-1. **Build the application:**
+### Docker Deployment (Recommended)
+1. Create `.env` file in your project root:
+   ```bash
+   MOODLE_BASE_URL=your_moodle_ws_endpoint
+   MOODLE_TOKEN=your_moodle_token
+   # Optional: LINK_CHECKER_TIMEOUT=30
+   ```
+
+2. Build and start the container:
+   ```bash
+   docker-compose -f docker/docker-compose.yml up --build
+   ```
+
+3. Access the interface at:
+   ```bash
+   http://localhost:8080  # or your configured host port
+   ```
+
+### Local Execution
+1. Build the application:
    ```bash
    gradle clean build
    ```
 
-2. **Run the application:**
+2. Run with environment variables:
    ```bash
-   java -jar target/lms-url-checker.jar
+   export MOODLE_BASE_URL=your_moodle_ws_endpoint
+   export MOODLE_TOKEN=your_moodle_token
+   java -jar build/libs/lms-url-checker-1.0.jar
    ```
 
-3. **Access the interface:**
-   Open `http://localhost:8080/moodle/links` in your browser
+3. Access the interface at:
+   ```bash
+   http://localhost:8080
+   ```
 
-## How It Works
+## Docker Architecture
+- **Multi-stage build**:
+   - Build stage: Gradle 8.5 + JDK 21
+   - Runtime stage: Eclipse Temurin 21 JDK Alpine
+- Optimized layer caching for faster builds
+- Lightweight production image (~350MB)
 
-1. **Course Discovery**
-    - Uses `core_course_get_courses` Moodle API method to fetch all course IDs
-    - Requires manager permissions to access all courses
+## Technical Details
 
-2. **Link Extraction**
-    - For each course, calls `mod_assign_get_assignments` to get assignment details
-    - Parses assignment descriptions (intro field) to extract URLs
-    - Filters for HTTP/HTTPS links only
+### Link Validation Logic
+| Parameter              | Default | Configurable Via                |
+|------------------------|---------|----------------------------------|
+| Timeout                | 30s     | `LINK_CHECKER_TIMEOUT` env var   |
+| Max Redirects          | 5       | Code constant in `LinkValidatorService` |
+| Concurrent Requests    | 10      | Code constant in `LinkValidatorService` |
 
-3. **Link Validation**
-    - Validates links concurrently (10 concurrent requests by default)
-    - 30-second timeout per request
-    - Maximum of 5 redirects allowed
-    - Checks HTTP response status codes
-    - Handles various error conditions (timeouts, DNS issues, etc.)
+### Moodle Integration
+- Required permissions:
+   - `core_course_get_courses`
+   - `mod_assign_get_assignments`
+- Web service user must be enrolled in all courses to check
 
-4. **Results Display**
-    - Shows invalid links only
-    - Displays course name, task name, full URL, and error details
-    - Links are clickable and open in new tabs
-    - Responsive design works on both desktop and mobile
+## Troubleshooting
 
-## Configuration Options
+**Common Issues**:
+- *403 Forbidden*: Ensure Moodle token has correct permissions
+- *Connection Timeout*: Verify `MOODLE_BASE_URL` is reachable from container/network
+- *Empty Results*: Check user course enrollments in Moodle
 
-Key configuration parameters in `LinkValidatorService`:
-```java
-private static final int MAX_REDIRECTS = 5;
-private static final int TIMEOUT_SECONDS = 30;
-private static final int MAX_CONCURRENT_REQUESTS = 10;
+**View Logs**:
+```bash
+docker-compose -f docker/docker-compose.yml logs -f
 ```
 
 ## Known Limitations
-
-- Some websites may require specific headers for successful validation
-- Current implementation achieves approximately 80% accuracy (650 out of 800 links validated successfully in testing)
-- Token-based authentication requires periodic token renewal unless configured otherwise
+- First-run latency due to Moodle API response times
+- Websites with non-standard ports (e.g., :8443) show sanitized errors
+- Token rotation required per Moodle security policy
 
 ## Contributing
-
-Feel free to submit issues and enhancement requests!
+PRs and issues welcome! Please include:
+- Detailed reproduction steps for bugs
+- Screenshots for UI changes
+- Updated tests for new features
