@@ -173,4 +173,4 @@ PRs and issues welcome! Please include:
 - Updated tests for new features
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License – see the LICENSE file for details.
